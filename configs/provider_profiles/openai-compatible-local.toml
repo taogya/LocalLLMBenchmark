@@ -1,0 +1,11 @@
+provider_id = "openai_compatible"
+
+[connection]
+base_url = "http://localhost:1234/v1"
+timeout_seconds = 30.0
+# 認証が必要な場合だけ、値そのものではなく環境変数名を指定する。
+# api_key_env = "LOCAL_LLM_BENCHMARK_OPENAI_COMPAT_API_KEY"
+
+[metadata]
+task_id = "00010-02,00012-02"
+description = "OpenAI-compatible local server 用の sample profile。既定は keyless で、認証が必要な場合だけ connection.api_key_env を使う。"

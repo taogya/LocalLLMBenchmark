@@ -1,0 +1,17 @@
+suite_id = "openai-compatible-minimal-v1"
+description = "task_id 00016-02: OpenAI-compatible readiness 用の 1 model x 3 prompts 最小 suite。"
+prompt_set_ids = ["minimal-readiness-ja-v1"]
+tags = ["minimal", "openai-compatible", "readiness"]
+
+[model_selector]
+explicit_model_keys = ["local.openai_compatible.readiness"]
+provider_id = "openai_compatible"
+
+[generation_overrides]
+temperature = 0.0
+top_p = 0.95
+max_output_tokens = 128
+seed = 7
+
+[metadata]
+task_id = "00016-02"

@@ -1,0 +1,60 @@
+prompt_id = "followup-action-json-v1"
+version = "1"
+category = "constrained_generation"
+title = "制約付き JSON 生成"
+description = "task_id 00009-04: 初期比較用の短い constrained_generation prompt。"
+system_message = """
+あなたは制約付き出力の評価対象モデルです。
+指示されたキーと値を守り、JSON だけを返してください。
+"""
+user_message = """
+次のメモを JSON で整理してください。
+条件:
+- キーは "channel", "priority", "action" の 3 つだけにしてください。
+- priority の値は "high" にしてください。
+- action には「折り返し」を含めてください。
+- 出力は JSON のみを返してください。
+
+メモ:
+顧客にはメールで連絡し、至急のため本日中に折り返し対応します。
+"""
+tags = ["baseline", "ja", "small-model-friendly", "json-output"]
+
+[recommended_generation]
+temperature = 0.0
+top_p = 0.95
+max_output_tokens = 96
+seed = 7
+
+[evaluation_metadata]
+primary_metric = "constraint_pass_rate"
+secondary_metrics = ["format_valid_rate"]
+reference_type = "none"
+scorer = "constraint_pass"
+difficulty = "starter"
+language = "ja"
+expected_output_format = "json"
+
+[output_contract]
+type = "json_object"
+constraint_ids = [
+  "required_keys",
+  "priority_high",
+  "action_contains_callback",
+]
+required_keys = ["channel", "priority", "action"]
+allowed_keys = ["channel", "priority", "action"]
+required_phrases = ["high", "折り返し"]
+
+[output_contract.required_values]
+priority = "high"
+
+[output_contract.field_types]
+channel = "string"
+priority = "string"
+action = "string"
+
+[metadata]
+task_id = "00009-04"
+
+[metadata.evaluation_reference]

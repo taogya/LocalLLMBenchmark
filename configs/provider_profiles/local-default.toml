@@ -1,0 +1,12 @@
+provider_id = "ollama"
+
+[connection]
+base_url = "http://localhost:11434"
+timeout_seconds = 30.0
+
+[settings]
+keep_alive = "5m"
+
+[metadata]
+task_id = "00004-02"
+description = "ローカル既定の provider 接続設定。"

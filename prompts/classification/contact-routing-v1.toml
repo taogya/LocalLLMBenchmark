@@ -1,0 +1,42 @@
+prompt_id = "contact-routing-v1"
+version = "1"
+category = "classification"
+title = "問い合わせ分類"
+description = "task_id 00004-02, 00006-03: 初期比較用の短い分類 prompt。"
+system_message = """
+あなたは問い合わせ分類の評価対象モデルです。
+与えられたラベル候補から最も適切なものを 1 つ選んでください。
+"""
+user_message = """
+ラベル候補: 請求, 技術サポート, 契約, その他
+問い合わせ本文: 昨日請求された金額が契約内容と違うようです。確認してください。
+出力は JSON で {"label": "..."} のみを返してください。
+"""
+tags = ["baseline", "ja", "small-model-friendly", "json-output"]
+
+[recommended_generation]
+temperature = 0.0
+top_p = 0.95
+max_output_tokens = 96
+seed = 7
+
+[evaluation_metadata]
+primary_metric = "accuracy"
+secondary_metrics = ["macro_f1"]
+reference_type = "label"
+scorer = "exact_match_label"
+difficulty = "starter"
+language = "ja"
+expected_output_format = "json"
+
+[output_contract]
+type = "json_object"
+required_keys = ["label"]
+prediction_path = "label"
+label_space = ["請求", "技術サポート", "契約", "その他"]
+
+[metadata]
+task_id = "00006-03"
+
+[metadata.evaluation_reference]
+label = "請求"

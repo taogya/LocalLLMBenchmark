@@ -1,0 +1,44 @@
+prompt_id = "meeting-notice-summary-v1"
+version = "1"
+category = "summarization"
+title = "会議案内要約"
+description = "task_id 00009-04: 初期比較用の短い summarization prompt。"
+system_message = """
+あなたは短い要約を作成する評価対象モデルです。
+指示された文字数範囲を守り、本文だけを返してください。
+"""
+user_message = """
+次の連絡文を 80〜120 文字で要約してください。
+出力は本文のみを返してください。
+
+原文:
+来週水曜の顧客説明会は 14 時開始に変更します。発表資料は前日 17 時までに共有フォルダへ入れてください。会場参加が難しい場合は火曜正午までに担当へ連絡してください。
+"""
+tags = ["baseline", "ja", "small-model-friendly"]
+
+[recommended_generation]
+temperature = 0.0
+top_p = 0.95
+max_output_tokens = 96
+seed = 7
+
+[evaluation_metadata]
+primary_metric = "length_compliance_rate"
+reference_type = "none"
+scorer = "length_compliance"
+difficulty = "starter"
+language = "ja"
+expected_output_format = "text"
+
+[output_contract]
+type = "text"
+
+[output_contract.length_range]
+min_chars = 80
+max_chars = 120
+unit = "chars"
+
+[metadata]
+task_id = "00009-04"
+
+[metadata.evaluation_reference]

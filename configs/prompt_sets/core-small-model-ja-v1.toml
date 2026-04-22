@@ -1,0 +1,10 @@
+prompt_set_id = "core-small-model-ja-v1"
+description = "task_id 00004-02: 小型ローカルモデルの初期比較に使う prompt set。"
+prompt_ids = [
+  "contact-routing-v1",
+  "invoice-fields-v1",
+  "polite-rewrite-v1",
+  "meeting-notice-summary-v1",
+  "support-hours-answer-v1",
+  "followup-action-json-v1",
+]

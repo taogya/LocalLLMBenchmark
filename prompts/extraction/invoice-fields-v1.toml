@@ -1,0 +1,48 @@
+prompt_id = "invoice-fields-v1"
+version = "1"
+category = "extraction"
+title = "請求情報抽出"
+description = "task_id 00004-02, 00006-03: 初期比較用の短い抽出 prompt。"
+system_message = """
+あなたは情報抽出の評価対象モデルです。
+必要な項目だけを JSON で返してください。
+"""
+user_message = """
+本文:
+請求番号 INV-2048 のお支払い期限は 2026-05-15、請求総額は 12800 円です。
+出力は JSON で {"invoice_number": "...", "due_date": "...", "amount_jpy": ...} のみを返してください。
+"""
+tags = ["baseline", "ja", "small-model-friendly", "json-output"]
+
+[recommended_generation]
+temperature = 0.0
+top_p = 0.95
+max_output_tokens = 96
+seed = 7
+
+[evaluation_metadata]
+primary_metric = "exact_match_rate"
+secondary_metrics = ["json_valid_rate"]
+reference_type = "json"
+scorer = "exact_match_json_fields"
+difficulty = "starter"
+language = "ja"
+expected_output_format = "json"
+
+[output_contract]
+type = "json_object"
+required_keys = ["invoice_number", "due_date", "amount_jpy"]
+required_fields = ["invoice_number", "due_date", "amount_jpy"]
+
+[output_contract.field_types]
+invoice_number = "string"
+due_date = "string"
+amount_jpy = "integer"
+
+[metadata]
+task_id = "00006-03"
+
+[metadata.evaluation_reference]
+invoice_number = "INV-2048"
+due_date = "2026-05-15"
+amount_jpy = 12800
