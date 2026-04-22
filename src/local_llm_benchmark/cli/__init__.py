@@ -1,1 +1,5 @@
-"""task_id 00001-03: CLI パッケージ。"""
+"""CLI 公開窓口 (TASK-00007-01)."""
+
+from .main import main
+
+__all__ = ["main"]

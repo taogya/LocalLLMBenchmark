@@ -1,0 +1,16 @@
+# Comparison 設定サンプル (TASK-00007-04, CFG-00207)
+# `runs` には実機 Run 後に得られた Run 識別子を記入する (DAT-00108: 2 件以上)。
+# 本ファイルはテンプレートであり、CLI 引数 `--run-id` を 2 回以上指定する方式でも
+# 同じ結果が得られる。
+
+[comparison]
+runs = [
+    "REPLACE_WITH_RUN_ID_A",
+    "REPLACE_WITH_RUN_ID_B",
+]
+ranking_axis_default = "integrated"
+store_root = "tmp/results"
+
+[comparison.weights]
+w_quality = 0.7
+w_speed = 0.3

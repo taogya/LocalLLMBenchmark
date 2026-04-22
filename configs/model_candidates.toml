@@ -1,0 +1,9 @@
+# Model Candidate サンプル (TASK-00007-04, CFG-00102)
+# v1 では Ollama 側で `ollama pull qwen2.5:7b` 済みであることを前提とする。
+# モデルの download / 常駐管理は本ツールの責務外 (NFR-00303)。
+
+[[model_candidate]]
+name = "qwen2.5-7b"
+provider_kind = "ollama"
+provider_model_ref = "qwen2.5:7b"
+label = "Qwen2.5 7B (Ollama)"

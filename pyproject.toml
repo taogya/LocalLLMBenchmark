@@ -1,11 +1,17 @@
+# TASK-00007-01 / NFR-00302
+# v1.0.0 最小垂直スライスのためのプロジェクト定義。
+# 外部依存なし (Python 3.13 標準ライブラリのみ)。
+
 [build-system]
 requires = ["setuptools>=69"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "local-llm-benchmark"
-version = "0.1.0"
-description = "ローカル LLM ベンチマークの最小スキャフォールド"
+version = "1.0.0"
+description = "ローカル LLM ベンチマーク本体 (v1.0.0)"
+license = "BSD-3-Clause"
+license-files = ["LICENSE"]
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = []

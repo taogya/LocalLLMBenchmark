@@ -1,0 +1,14 @@
+# Run 設定サンプル A (TASK-00007-04, CFG-00107)
+# 1 Run = 1 Model (FUN-00207 / ARCH-00207)。
+# n_trials は 1 以上 (FUN-00202)。
+
+[run]
+model_candidate = "qwen2.5-7b"
+task_profiles = ["qa-basic"]
+n_trials = 3
+store_root = "tmp/results"
+
+[run.generation]
+temperature = 0.0
+seed = 42
+max_tokens = 64

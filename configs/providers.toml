@@ -1,0 +1,9 @@
+# Provider 設定サンプル (TASK-00007-04, CFG-00104)
+# 既定接続先は localhost (CFG-00204 / NFR-00402)。
+# 認証情報は配置禁止 (CFG-00402 / NFR-00401)。
+
+[[provider]]
+kind = "ollama"
+host = "localhost"
+port = 11434
+timeout_seconds = 120

@@ -1,624 +1,632 @@
-"""task_id 00001-03, 00004-02: 外部 TOML 設定を読み込む loader。"""
+"""Configuration & Task Catalog (TASK-00007-01).
+
+COMP-00007 (Configuration Loader) と COMP-00008 (Task Catalog) を提供する。
+v1 では TOML (`tomllib` 標準) でユーザー素材を読み込み、整合性検証
+(CFG-00501..00505 のうち Phase 1 範囲) を行う。
+
+物理スキーマは設計書では確定していないため、本実装で初めて確定する
+(設計上の概念のみが正本)。具体キー名は本ファイル内コメントで管理する
+(.github/copilot-instructions.md の方針)。
+
+CFG-00004 「1 ファイル 1 概念」に従い、種類別ファイルを別ディレクトリ
+で受け取る構成を既定とする。
+"""
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import datetime
-from pathlib import Path
+import os
 import tomllib
-from typing import Any, Mapping
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Iterable, Mapping
 
-from local_llm_benchmark.benchmark.models import (
-    BenchmarkPlan,
-    GenerationSettings,
+from ..models import (
+    Case,
+    GenerationConditions,
+    ModelCandidate,
+    ProviderEndpoint,
+    RunPlan,
+    ScorerSpec,
+    TaskProfile,
 )
-from local_llm_benchmark.config.models import (
-    AppConfig,
-    BenchmarkSuiteConfig,
-    ConfigBundle,
-    ModelSelector,
-    ProviderProfile,
-)
-from local_llm_benchmark.prompts.models import (
-    EvaluationMetadata,
-    PromptSet,
-    PromptSpec,
-    PromptVariable,
-)
-from local_llm_benchmark.prompts.repository import InMemoryPromptRepository
-from local_llm_benchmark.registry.model_registry import InMemoryModelRegistry
-from local_llm_benchmark.registry.models import ModelSpec
 
 
-@dataclass(slots=True)
-class ConfigLayout:
-    benchmark_suites_dir: Path
-    model_registry_dir: Path
-    prompt_sets_dir: Path
-    provider_profiles_dir: Path
-    prompts_dir: Path
+class ConfigurationError(Exception):
+    """設定読込・整合性検証で検出した不整合 (FLW-00102, CFG-00402 ほか)."""
 
 
-def load_config_bundle(config_root: str | Path) -> ConfigBundle:
-    layout = _resolve_config_layout(config_root)
-    provider_profiles = _load_provider_profiles(layout.provider_profiles_dir)
-    model_specs = _load_model_specs(layout.model_registry_dir)
-    prompt_specs = _load_prompt_specs(layout.prompts_dir)
-    prompt_sets = _load_prompt_sets(layout.prompt_sets_dir)
-    benchmark_suites = _load_benchmark_suites(layout.benchmark_suites_dir)
-
-    bundle = ConfigBundle(
-        app_config=AppConfig(
-            provider_profiles=provider_profiles,
-            benchmark_suites=benchmark_suites,
-        ),
-        model_specs=tuple(model_specs),
-        prompt_specs=tuple(prompt_specs),
-        prompt_sets=tuple(prompt_sets),
-    )
-    _validate_bundle(bundle)
-    return bundle
+# ---- Task Catalog (COMP-00008) ---------------------------------------------
 
 
-def build_benchmark_plan(
-    bundle: ConfigBundle,
-    *,
-    suite_id: str,
-    run_id: str | None = None,
-    trace_metadata: Mapping[str, Any] | None = None,
-) -> BenchmarkPlan:
+@dataclass(frozen=True)
+class TaskCatalog:
+    """TaskProfile 集合の提供者 (COMP-00008).
+
+    name -> TaskProfile の辞書を内包する。
+    """
+
+    profiles: Mapping[str, TaskProfile]
+
+    def resolve(self, names: Iterable[str]) -> list[TaskProfile]:
+        """名称列から TaskProfile を解決する。未登録は ConfigurationError."""
+        out: list[TaskProfile] = []
+        for n in names:
+            if n not in self.profiles:
+                raise ConfigurationError(f"未登録の Task Profile を参照: {n}")
+            out.append(self.profiles[n])
+        return out
+
+
+def _load_toml(path: Path) -> Mapping[str, object]:
     try:
-        suite = bundle.app_config.benchmark_suites[suite_id]
-    except KeyError as exc:
-        raise KeyError(
-            f"suite_id '{suite_id}' は config bundle に存在しません。"
-        ) from exc
+        with path.open("rb") as f:
+            return tomllib.load(f)
+    except FileNotFoundError as exc:
+        raise ConfigurationError(f"設定ファイルが見つからない: {path}") from exc
+    except tomllib.TOMLDecodeError as exc:
+        raise ConfigurationError(f"TOML 解析失敗 ({path}): {exc}") from exc
 
-    metadata = {
-        "task_id": "00004-02",
-        "config_source": "external_toml",
-    }
-    if trace_metadata is not None:
-        metadata.update(dict(trace_metadata))
 
-    return BenchmarkPlan(
-        run_id=run_id or _default_run_id(suite_id),
-        suite_id=suite.suite_id,
-        model_selector=suite.model_selector,
-        prompt_set_ids=suite.prompt_set_ids,
-        prompt_ids=suite.prompt_ids,
-        default_generation=suite.generation_overrides,
-        trace_metadata=metadata,
+def _require(d: Mapping[str, object], key: str, where: str) -> object:
+    if key not in d:
+        raise ConfigurationError(f"必須キー '{key}' が無い ({where})")
+    return d[key]
+
+
+def _parse_task_profile(data: Mapping[str, object], src: Path) -> TaskProfile:
+    """物理スキーマ (本実装で確定):
+
+        [task_profile]
+        name = "qa-basic"
+        purpose = "短答 QA"
+        description = "..."
+        [task_profile.scorer]
+        name = "exact_match"
+        args = { normalize_whitespace = true }   # 任意
+        [[task_profile.cases]]
+        name = "case-1"
+        input = "..."
+        expected_output = "..."
+    """
+    tp = _require(data, "task_profile", str(src))
+    if not isinstance(tp, dict):
+        raise ConfigurationError(f"[task_profile] テーブルが不正: {src}")
+    name = str(_require(tp, "name", str(src)))
+    purpose = str(_require(tp, "purpose", str(src)))
+    description = tp.get("description")
+    scorer_d = _require(tp, "scorer", str(src))
+    if not isinstance(scorer_d, dict):
+        raise ConfigurationError(f"[task_profile.scorer] が不正: {src}")
+    scorer = ScorerSpec(
+        name=str(_require(scorer_d, "name", str(src))),
+        args=dict(scorer_d.get("args") or {}),
     )
-
-
-def _resolve_config_layout(config_root: str | Path) -> ConfigLayout:
-    requested_root = Path(config_root).expanduser().resolve()
-    config_base = _resolve_config_base(requested_root)
-    prompts_dir = _resolve_prompts_dir(requested_root, config_base)
-    return ConfigLayout(
-        benchmark_suites_dir=config_base / "benchmark_suites",
-        model_registry_dir=config_base / "model_registry",
-        prompt_sets_dir=config_base / "prompt_sets",
-        provider_profiles_dir=config_base / "provider_profiles",
-        prompts_dir=prompts_dir,
-    )
-
-
-def _resolve_config_base(requested_root: Path) -> Path:
-    if _has_config_directories(requested_root):
-        return requested_root
-
-    candidate = requested_root / "configs"
-    if _has_config_directories(candidate):
-        return candidate
-
-    raise FileNotFoundError(
-        "config root から benchmark_suites、model_registry、prompt_sets、"
-        "provider_profiles を見つけられませんでした。"
-    )
-
-
-def _resolve_prompts_dir(requested_root: Path, config_base: Path) -> Path:
-    candidates: list[Path] = []
-    for candidate in (
-        config_base / "prompts",
-        config_base.parent / "prompts",
-        requested_root / "prompts",
-    ):
-        if candidate not in candidates:
-            candidates.append(candidate)
-
-    for candidate in candidates:
-        if candidate.is_dir():
-            return candidate
-
-    raise FileNotFoundError(
-        "config root に対応する prompts ディレクトリを見つけられませんでした。"
-    )
-
-
-def _has_config_directories(base_dir: Path) -> bool:
-    required = (
-        "benchmark_suites",
-        "model_registry",
-        "prompt_sets",
-        "provider_profiles",
-    )
-    return base_dir.is_dir() and all(
-        (base_dir / name).is_dir() for name in required
-    )
-
-
-def _load_provider_profiles(
-    directory: Path,
-) -> dict[str, ProviderProfile]:
-    seen_provider_ids: dict[str, Path] = {}
-    profiles: dict[str, ProviderProfile] = {}
-    for file_path in _iter_toml_files(directory):
-        raw = _read_toml_file(file_path)
-        provider_id = _require_str(raw, "provider_id", file_path)
-        _register_unique(
-            seen_provider_ids,
-            provider_id,
-            file_path,
-            "provider_id",
+    cases_raw = _require(tp, "cases", str(src))
+    if not isinstance(cases_raw, list) or not cases_raw:
+        # DAT-00101: 最低 1 件
+        raise ConfigurationError(
+            f"Task Profile は最低 1 件の Case を持つ必要がある (DAT-00101): {src}"
         )
-        profiles[provider_id] = ProviderProfile(
-            provider_id=provider_id,
-            connection=_optional_mapping(raw.get("connection")),
-            settings=_optional_mapping(raw.get("settings")),
-            metadata=_optional_mapping(raw.get("metadata")),
-        )
-    return profiles
-
-
-def _load_model_specs(directory: Path) -> list[ModelSpec]:
-    model_specs: list[ModelSpec] = []
-    seen_model_keys: dict[str, Path] = {}
-    for file_path in _iter_toml_files(directory):
-        raw = _read_toml_file(file_path)
-        records = raw.get("models")
-        if records is None:
-            records = [raw]
-        if not isinstance(records, list):
-            raise ValueError(
-                f"{file_path} の models は配列である必要があります。"
+    cases: list[Case] = []
+    for c in cases_raw:
+        if not isinstance(c, dict):
+            raise ConfigurationError(f"case エントリが不正: {src}")
+        cases.append(
+            Case(
+                name=str(_require(c, "name", str(src))),
+                input_text=str(_require(c, "input", str(src))),
+                expected_output=(None if c.get("expected_output") is None
+                                 else str(c["expected_output"])),
             )
-        for record in records:
-            if not isinstance(record, dict):
-                raise ValueError(
-                    f"{file_path} の model record は table である必要があります。"
+        )
+    return TaskProfile(
+        name=name,
+        purpose=purpose,
+        description=None if description is None else str(description),
+        scorer=scorer,
+        cases=tuple(cases),
+    )
+
+
+def load_task_catalog(task_profile_dir: Path) -> TaskCatalog:
+    """ディレクトリ配下の `*.toml` を Task Profile として読み込む (COMP-00008).
+
+    1 ファイル 1 TaskProfile を前提 (CFG-00004)。
+    """
+    if not task_profile_dir.is_dir():
+        raise ConfigurationError(
+            f"Task Profile ディレクトリが存在しない: {task_profile_dir}"
+        )
+    profiles: dict[str, TaskProfile] = {}
+    for path in sorted(task_profile_dir.glob("*.toml")):
+        data = _load_toml(path)
+        tp = _parse_task_profile(data, path)
+        if tp.name in profiles:
+            raise ConfigurationError(f"Task Profile 名が重複: {tp.name}")
+        profiles[tp.name] = tp
+    return TaskCatalog(profiles=profiles)
+
+
+# ---- Model / Provider 定義 -------------------------------------------------
+
+
+def _parse_model_candidates(
+    data: Mapping[str, object], src: Path
+) -> dict[str, ModelCandidate]:
+    """物理スキーマ:
+
+        [[model_candidate]]
+        name = "qwen2:1.5b"
+        provider_kind = "ollama"
+        provider_model_ref = "qwen2:1.5b"
+        label = "qwen2 small"
+    """
+    raw = data.get("model_candidate")
+    if not isinstance(raw, list) or not raw:
+        raise ConfigurationError(
+            f"[[model_candidate]] が空、または不正な形式: {src}"
+        )
+    out: dict[str, ModelCandidate] = {}
+    for entry in raw:
+        if not isinstance(entry, dict):
+            raise ConfigurationError(f"model_candidate エントリが不正: {src}")
+        mc = ModelCandidate(
+            name=str(_require(entry, "name", str(src))),
+            provider_kind=str(_require(entry, "provider_kind", str(src))),
+            provider_model_ref=str(
+                _require(entry, "provider_model_ref", str(src))
+            ),
+            label=(None if entry.get("label") is None else str(entry["label"])),
+        )
+        if mc.name in out:
+            raise ConfigurationError(f"Model Candidate 名が重複: {mc.name}")
+        out[mc.name] = mc
+    return out
+
+
+def load_model_candidates(path: Path) -> dict[str, ModelCandidate]:
+    return _parse_model_candidates(_load_toml(path), path)
+
+
+def _parse_provider_endpoints(
+    data: Mapping[str, object], src: Path
+) -> dict[str, ProviderEndpoint]:
+    """物理スキーマ:
+
+        [[provider]]
+        kind = "ollama"
+        host = "localhost"
+        port = 11434
+        timeout_seconds = 120
+
+    認証情報の平文格納は禁止 (CFG-00402)。Phase 1 では Ollama のみで
+    認証要素を持たない想定だが、未知キー `api_key` 等の混入を検出
+    した場合は失敗させる。
+    """
+    raw = data.get("provider")
+    if not isinstance(raw, list) or not raw:
+        raise ConfigurationError(
+            f"[[provider]] が空、または不正な形式: {src}"
+        )
+    forbidden = {"api_key", "token", "password", "secret"}
+    out: dict[str, ProviderEndpoint] = {}
+    for entry in raw:
+        if not isinstance(entry, dict):
+            raise ConfigurationError(f"provider エントリが不正: {src}")
+        # CFG-00402 認証情報の平文を検出
+        leaked = forbidden.intersection(entry.keys())
+        if leaked:
+            raise ConfigurationError(
+                f"認証情報を平文で保持している (CFG-00402): {sorted(leaked)} in {src}"
+            )
+        kind = str(_require(entry, "kind", str(src)))
+        ep = ProviderEndpoint(
+            kind=kind,
+            host=str(entry.get("host", "localhost")),
+            port=int(entry.get("port", 11434)),
+            timeout_seconds=float(entry.get("timeout_seconds", 120.0)),
+        )
+        if kind in out:
+            raise ConfigurationError(f"provider 種別が重複: {kind}")
+        out[kind] = ep
+    return out
+
+
+def load_provider_endpoints(path: Path) -> dict[str, ProviderEndpoint]:
+    return _parse_provider_endpoints(_load_toml(path), path)
+
+
+# ---- Run 設定 (CFG-00107) --------------------------------------------------
+
+
+@dataclass(frozen=True)
+class RunConfig:
+    """Run 設定の物理表現 (CFG-00107 / CFG-00206).
+
+    Loader の検証で 1 Run = 1 Model (FUN-00207, ARCH-00207) を強制する。
+    """
+
+    model_candidate_name: str
+    task_profile_names: tuple[str, ...]
+    n_trials: int
+    conditions: GenerationConditions
+    store_root: Path | None  # None なら CLI 既定にフォールバック
+
+
+def _parse_run_config(data: Mapping[str, object], src: Path) -> RunConfig:
+    """物理スキーマ:
+
+        [run]
+        model_candidate = "qwen2:1.5b"
+        task_profiles = ["qa-basic"]
+        n_trials = 3
+        store_root = "tmp/results"
+
+        [run.generation]
+        temperature = 0.0
+        seed = 42
+        max_tokens = 256
+    """
+    rc = _require(data, "run", str(src))
+    if not isinstance(rc, dict):
+        raise ConfigurationError(f"[run] テーブルが不正: {src}")
+    model_field = _require(rc, "model_candidate", str(src))
+    # CLI-00106: 複数 Model 指定はエラー
+    if isinstance(model_field, list):
+        raise ConfigurationError(
+            "複数 Model Candidate 指定は禁止 (1 Run = 1 Model: FUN-00207)。"
+            " compare サブコマンドの利用を検討してください。"
+        )
+    if not isinstance(model_field, str):
+        raise ConfigurationError(f"model_candidate は文字列で指定する: {src}")
+    tp_field = _require(rc, "task_profiles", str(src))
+    if not isinstance(tp_field, list) or not tp_field:
+        raise ConfigurationError(f"task_profiles は 1 件以上の配列: {src}")
+    n_trials = int(_require(rc, "n_trials", str(src)))
+    if n_trials < 1:
+        raise ConfigurationError(f"n_trials は 1 以上: {src}")
+    gen_d = rc.get("generation") or {}
+    if not isinstance(gen_d, dict):
+        raise ConfigurationError(f"[run.generation] が不正: {src}")
+    conditions = GenerationConditions(
+        temperature=(None if gen_d.get("temperature") is None
+                     else float(gen_d["temperature"])),
+        seed=(None if gen_d.get("seed") is None else int(gen_d["seed"])),
+        max_tokens=(None if gen_d.get("max_tokens") is None
+                    else int(gen_d["max_tokens"])),
+    )
+    store_root = rc.get("store_root")
+    return RunConfig(
+        model_candidate_name=model_field,
+        task_profile_names=tuple(str(x) for x in tp_field),
+        n_trials=n_trials,
+        conditions=conditions,
+        store_root=None if store_root is None else Path(str(store_root)),
+    )
+
+
+def load_run_config(path: Path) -> RunConfig:
+    return _parse_run_config(_load_toml(path), path)
+
+
+# ---- Comparison 設定 (CFG-00207, TASK-00007-02) ----------------------------
+
+
+@dataclass(frozen=True)
+class ComparisonConfig:
+    """Comparison 設定の物理表現 (CFG-00207).
+
+    Loader 側では DAT-00108 (2 件以上) のみ静的に検証する。Run 識別子の
+    実在性 (CFG-00506) は Run Comparator 実行時に Result Store 参照で
+    検証する。
+    """
+
+    run_ids: tuple[str, ...]
+    ranking_axis_default: str  # "quality" / "speed" / "integrated"
+    w_quality: float
+    w_speed: float
+    store_root: Path | None
+
+
+_VALID_AXES = ("quality", "speed", "integrated")
+
+
+def _parse_comparison_config(
+    data: Mapping[str, object], src: Path
+) -> ComparisonConfig:
+    """物理スキーマ (本実装で確定):
+
+        [comparison]
+        runs = ["run-...-A", "run-...-B"]
+        ranking_axis_default = "integrated"   # 任意
+        store_root = "tmp/results"            # 任意
+
+        [comparison.weights]
+        w_quality = 0.7   # 任意 (既定 SCR-00806)
+        w_speed   = 0.3   # 任意 (既定 SCR-00807)
+    """
+    cmp = _require(data, "comparison", str(src))
+    if not isinstance(cmp, dict):
+        raise ConfigurationError(f"[comparison] テーブルが不正: {src}")
+    runs_field = _require(cmp, "runs", str(src))
+    if not isinstance(runs_field, list):
+        raise ConfigurationError(f"comparison.runs は配列で指定する: {src}")
+    run_ids = tuple(str(x) for x in runs_field)
+    # CFG-00506 / DAT-00108: 2 件以上を Loader でも検証
+    if len(set(run_ids)) < 2:
+        raise ConfigurationError(
+            "comparison.runs は重複を除いて 2 件以上必要"
+            " (DAT-00108 / CFG-00506)"
+        )
+    axis_default = str(cmp.get("ranking_axis_default", "integrated"))
+    if axis_default not in _VALID_AXES:
+        raise ConfigurationError(
+            f"comparison.ranking_axis_default は {_VALID_AXES} のいずれか: {src}"
+        )
+    weights = cmp.get("weights") or {}
+    if not isinstance(weights, dict):
+        raise ConfigurationError(f"[comparison.weights] が不正: {src}")
+    w_quality = float(weights.get("w_quality", 0.7))  # SCR-00806 既定
+    w_speed = float(weights.get("w_speed", 0.3))  # SCR-00807 既定
+    if w_quality < 0 or w_speed < 0:
+        raise ConfigurationError(
+            "comparison.weights は 0 以上の浮動小数を指定する (SCR-00808)"
+        )
+    if w_quality + w_speed <= 0:
+        raise ConfigurationError(
+            "comparison.weights の合計が 0 では統合スコアを算出できない"
+        )
+    store_root = cmp.get("store_root")
+    return ComparisonConfig(
+        run_ids=run_ids,
+        ranking_axis_default=axis_default,
+        w_quality=w_quality,
+        w_speed=w_speed,
+        store_root=None if store_root is None else Path(str(store_root)),
+    )
+
+
+def load_comparison_config(path: Path) -> ComparisonConfig:
+    return _parse_comparison_config(_load_toml(path), path)
+
+
+# ---- Run 計画の組み立て -----------------------------------------------------
+
+
+def assemble_run_plan(
+    run_config: RunConfig,
+    catalog: TaskCatalog,
+    models: Mapping[str, ModelCandidate],
+    providers: Mapping[str, ProviderEndpoint],
+) -> RunPlan:
+    """RunConfig + 各 Catalog から RunPlan を組み立てる (FLW-00005)."""
+    if run_config.model_candidate_name not in models:
+        raise ConfigurationError(
+            f"未登録の Model Candidate を参照: {run_config.model_candidate_name}"
+        )
+    model = models[run_config.model_candidate_name]
+    if model.provider_kind not in providers:
+        # CFG-00502
+        raise ConfigurationError(
+            f"未登録の provider 種別: {model.provider_kind}"
+        )
+    profiles = catalog.resolve(run_config.task_profile_names)
+    return RunPlan(
+        model_candidate=model,
+        task_profiles=tuple(profiles),
+        n_trials=run_config.n_trials,
+        conditions=run_config.conditions,
+        provider_endpoint=providers[model.provider_kind],
+    )
+
+
+# ---- ディレクトリ規約 ------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class ConfigBundle:
+    """ユーザー設定一式 (Configuration Loader 集約).
+
+    CFG-00302: 「ツール本体側既定 / ユーザー指定外部」のどちらから読んだ
+    かはこの型のフィールドではなく Run メタに記録する責務 (Phase 1 では
+    `source_root` を保持し Coordinator 側で記録する)。
+    """
+
+    source_root: Path
+    catalog: TaskCatalog
+    models: Mapping[str, ModelCandidate]
+    providers: Mapping[str, ProviderEndpoint]
+
+
+def load_config_bundle(config_dir: Path) -> ConfigBundle:
+    """既定ディレクトリ構成からまとめて読み込む.
+
+    既定ディレクトリ構成 (1 ファイル 1 概念: CFG-00004):
+
+        <config_dir>/
+            task_profiles/*.toml   # CFG-00101
+            model_candidates.toml  # CFG-00102
+            providers.toml         # CFG-00104
+    """
+    if not config_dir.is_dir():
+        raise ConfigurationError(f"設定ディレクトリが存在しない: {config_dir}")
+    catalog = load_task_catalog(config_dir / "task_profiles")
+    models = load_model_candidates(config_dir / "model_candidates.toml")
+    providers = load_provider_endpoints(config_dir / "providers.toml")
+    return ConfigBundle(
+        source_root=config_dir.resolve(),
+        catalog=catalog,
+        models=models,
+        providers=providers,
+    )
+
+
+# ---- 認証情報解決ルール (Phase 1 では未使用だが API を確保) ----------------
+
+
+def resolve_env(var_name: str) -> str:
+    """環境変数経由の認証情報解決 (CFG-00401).
+
+    Phase 1 (Ollama) では未使用。将来 provider 拡張時の入口として残す。
+    """
+    val = os.environ.get(var_name)
+    if val is None:
+        raise ConfigurationError(
+            f"認証情報の解決に必要な環境変数が未設定: {var_name}"
+        )
+    return val
+
+
+# ---- 整合性検証 (CFG-00501..00506, TASK-00007-03) -------------------------
+
+
+@dataclass(frozen=True)
+class CheckIssue:
+    """`check` (CLI-00105) で検出した問題 1 件 (FUN-00105 / FUN-00402).
+
+    `code` は CFG-00501..00506 / SCR-00001 系の参照 ID を含む短い識別子。
+    `where` は問題箇所 (Task Profile 名 / Model Candidate 名等) を示す。
+    """
+
+    code: str
+    where: str
+    message: str
+
+
+def check_bundle(
+    bundle: "ConfigBundle",
+    store_root: Path | None = None,
+) -> list[CheckIssue]:
+    """設定一式の整合性検証 (CFG-00501..00505 / FUN-00105 / FUN-00402).
+
+    - CFG-00501: TaskProfile/Case の必須項目は Loader 段階で例外化済みだが、
+      期待出力欠落のように scorer が必須とする要件はここで検出する。
+    - CFG-00502: Model Candidate の provider_kind が登録済み provider にあるか。
+    - CFG-00503: 評価契約が参照する scorer が SCR- に存在するか。
+    - CFG-00505: store_root が書込可能か (任意指定時のみ)。
+
+    CFG-00504 (認証情報の環境変数解決) は v1 (Ollama) では認証要素が
+    無いため、検出対象なし。CFG-00506 (Comparison) は別途 check_comparison
+    で扱う。
+    """
+    # Local import to avoid circular dependency at module load time.
+    from ..scoring import is_known_scorer
+
+    issues: list[CheckIssue] = []
+
+    # CFG-00502: provider 種別の登録確認
+    for mc in bundle.models.values():
+        if mc.provider_kind not in bundle.providers:
+            issues.append(
+                CheckIssue(
+                    code="CFG-00502",
+                    where=f"model_candidate:{mc.name}",
+                    message=(
+                        f"未知 provider 参照: provider_kind={mc.provider_kind}"
+                        f" (登録済み: {sorted(bundle.providers)})"
+                    ),
                 )
-            model_key = _require_str(record, "model_key", file_path)
-            _register_unique(
-                seen_model_keys,
-                model_key,
-                file_path,
-                "model_key",
             )
-            model_specs.append(
-                ModelSpec(
-                    model_key=model_key,
-                    provider_id=_require_str(record, "provider_id", file_path),
-                    provider_model_name=_require_str(
-                        record,
-                        "provider_model_name",
-                        file_path,
+
+    # CFG-00503 + 期待出力欠落 (FUN-00105 観点)
+    for tp in bundle.catalog.profiles.values():
+        if not is_known_scorer(tp.scorer.name):
+            issues.append(
+                CheckIssue(
+                    code="CFG-00503",
+                    where=f"task_profile:{tp.name}",
+                    message=(
+                        f"未登録の scorer 参照: {tp.scorer.name}"
                     ),
-                    capability_tags=_as_string_tuple(
-                        record.get("capability_tags", []),
-                        file_path,
-                        "capability_tags",
-                    ),
-                    default_generation=_parse_generation_settings(
-                        _optional_mapping(record.get("default_generation")),
-                        file_path,
-                    ),
-                    metadata=_optional_mapping(record.get("metadata")),
                 )
             )
-    return model_specs
-
-
-def _load_prompt_specs(directory: Path) -> list[PromptSpec]:
-    prompt_specs: list[PromptSpec] = []
-    seen_prompt_ids: dict[str, Path] = {}
-    for file_path in sorted(directory.rglob("*.toml")):
-        raw = _read_toml_file(file_path)
-        prompt_id = _require_str(raw, "prompt_id", file_path)
-        _register_unique(seen_prompt_ids, prompt_id, file_path, "prompt_id")
-        variables = raw.get("variables", [])
-        if not isinstance(variables, list):
-            raise ValueError(
-                f"{file_path} の variables は配列である必要があります。"
-            )
-        prompt_specs.append(
-            PromptSpec(
-                prompt_id=prompt_id,
-                version=_require_str(raw, "version", file_path),
-                category=_require_str(raw, "category", file_path),
-                title=_require_str(raw, "title", file_path),
-                description=_require_str(raw, "description", file_path),
-                system_message=_require_text(
-                    raw,
-                    "system_message",
-                    file_path,
-                ),
-                user_message=_require_str(raw, "user_message", file_path),
-                variables=tuple(
-                    _parse_prompt_variable(variable, file_path)
-                    for variable in variables
-                ),
-                recommended_generation=_parse_generation_settings(
-                    _optional_mapping(raw.get("recommended_generation")),
-                    file_path,
-                ),
-                tags=_as_string_tuple(raw.get("tags", []), file_path, "tags"),
-                evaluation_metadata=_parse_evaluation_metadata(
-                    _optional_mapping(raw.get("evaluation_metadata")),
-                    file_path,
-                ),
-                output_contract=_optional_mapping(raw.get("output_contract")),
-                metadata=_optional_mapping(raw.get("metadata")),
-            )
-        )
-    return prompt_specs
-
-
-def _load_prompt_sets(directory: Path) -> list[PromptSet]:
-    prompt_sets: list[PromptSet] = []
-    seen_prompt_set_ids: dict[str, Path] = {}
-    for file_path in _iter_toml_files(directory):
-        raw = _read_toml_file(file_path)
-        prompt_set_id = _require_str(raw, "prompt_set_id", file_path)
-        _register_unique(
-            seen_prompt_set_ids,
-            prompt_set_id,
-            file_path,
-            "prompt_set_id",
-        )
-        prompt_sets.append(
-            PromptSet(
-                prompt_set_id=prompt_set_id,
-                description=_optional_str(raw.get("description")) or "",
-                prompt_ids=_as_string_tuple(
-                    raw.get("prompt_ids", []),
-                    file_path,
-                    "prompt_ids",
-                ),
-                include_categories=_as_string_tuple(
-                    raw.get("include_categories", []),
-                    file_path,
-                    "include_categories",
-                ),
-                include_tags=_as_string_tuple(
-                    raw.get("include_tags", []),
-                    file_path,
-                    "include_tags",
-                ),
-            )
-        )
-    return prompt_sets
-
-
-def _load_benchmark_suites(
-    directory: Path,
-) -> dict[str, BenchmarkSuiteConfig]:
-    seen_suite_ids: dict[str, Path] = {}
-    benchmark_suites: dict[str, BenchmarkSuiteConfig] = {}
-    for file_path in _iter_toml_files(directory):
-        raw = _read_toml_file(file_path)
-        suite_id = _require_str(raw, "suite_id", file_path)
-        _register_unique(seen_suite_ids, suite_id, file_path, "suite_id")
-        model_selector_raw = _optional_mapping(raw.get("model_selector"))
-        benchmark_suites[suite_id] = BenchmarkSuiteConfig(
-            suite_id=suite_id,
-            description=_require_str(raw, "description", file_path),
-            model_selector=ModelSelector(
-                explicit_model_keys=_as_string_tuple(
-                    model_selector_raw.get("explicit_model_keys", []),
-                    file_path,
-                    "model_selector.explicit_model_keys",
-                ),
-                include_tags=_as_string_tuple(
-                    model_selector_raw.get("include_tags", []),
-                    file_path,
-                    "model_selector.include_tags",
-                ),
-                provider_id=_optional_str(
-                    model_selector_raw.get("provider_id")
-                ),
-            ),
-            prompt_set_ids=_as_string_tuple(
-                raw.get("prompt_set_ids", []),
-                file_path,
-                "prompt_set_ids",
-            ),
-            prompt_ids=_as_string_tuple(
-                raw.get("prompt_ids", []),
-                file_path,
-                "prompt_ids",
-            ),
-            generation_overrides=_parse_generation_settings(
-                _optional_mapping(raw.get("generation_overrides")),
-                file_path,
-            ),
-            tags=_as_string_tuple(raw.get("tags", []), file_path, "tags"),
-            metadata=_optional_mapping(raw.get("metadata")),
-        )
-    return benchmark_suites
-
-
-def _validate_bundle(bundle: ConfigBundle) -> None:
-    provider_profiles = bundle.app_config.provider_profiles
-    prompt_ids = {prompt.prompt_id for prompt in bundle.prompt_specs}
-    model_specs_by_key = {
-        model.model_key: model for model in bundle.model_specs
-    }
-    prompt_sets_by_id = {
-        prompt_set.prompt_set_id: prompt_set
-        for prompt_set in bundle.prompt_sets
-    }
-
-    for model in bundle.model_specs:
-        if model.provider_id not in provider_profiles:
-            raise ValueError(
-                f"model_key '{model.model_key}' が未定義の provider_id "
-                f"'{model.provider_id}' を参照しています。"
-            )
-
-    for prompt_set in bundle.prompt_sets:
-        if not (
-            prompt_set.prompt_ids
-            or prompt_set.include_categories
-            or prompt_set.include_tags
+        # 期待出力を必須とする scorer に対して expected_output が無い Case を検出
+        if tp.scorer.name in (
+            "exact_match",
+            "normalized_match",
+            "regex_match",
         ):
-            raise ValueError(
-                f"prompt_set_id '{prompt_set.prompt_set_id}' に解決条件がありません。"
-            )
-        missing_prompt_ids = [
-            prompt_id
-            for prompt_id in prompt_set.prompt_ids
-            if prompt_id not in prompt_ids
-        ]
-        if missing_prompt_ids:
-            joined = ", ".join(missing_prompt_ids)
-            raise ValueError(
-                f"prompt_set_id '{prompt_set.prompt_set_id}' が未定義の "
-                f"prompt_id を参照しています: {joined}"
-            )
-
-    model_registry = InMemoryModelRegistry(list(bundle.model_specs))
-    prompt_repository = InMemoryPromptRepository(
-        list(bundle.prompt_specs),
-        list(bundle.prompt_sets),
-    )
-    for suite in bundle.app_config.benchmark_suites.values():
-        if suite.model_selector.provider_id is not None and (
-            suite.model_selector.provider_id not in provider_profiles
-        ):
-            raise ValueError(
-                f"suite_id '{suite.suite_id}' が未定義の provider_id "
-                f"'{suite.model_selector.provider_id}' を参照しています。"
-            )
-
-        missing_prompt_set_ids = [
-            prompt_set_id
-            for prompt_set_id in suite.prompt_set_ids
-            if prompt_set_id not in prompt_sets_by_id
-        ]
-        if missing_prompt_set_ids:
-            joined = ", ".join(missing_prompt_set_ids)
-            raise ValueError(
-                f"suite_id '{suite.suite_id}' が未定義の prompt_set_id を "
-                f"参照しています: {joined}"
-            )
-
-        missing_prompt_ids = [
-            prompt_id
-            for prompt_id in suite.prompt_ids
-            if prompt_id not in prompt_ids
-        ]
-        if missing_prompt_ids:
-            joined = ", ".join(missing_prompt_ids)
-            raise ValueError(
-                f"suite_id '{suite.suite_id}' が未定義の prompt_id を参照しています: "
-                f"{joined}"
-            )
-
-        missing_model_keys = [
-            model_key
-            for model_key in suite.model_selector.explicit_model_keys
-            if model_key not in model_specs_by_key
-        ]
-        if missing_model_keys:
-            joined = ", ".join(missing_model_keys)
-            raise ValueError(
-                f"suite_id '{suite.suite_id}' が未定義の model_key を参照しています: "
-                f"{joined}"
-            )
-
-        if suite.model_selector.provider_id is not None:
-            for model_key in suite.model_selector.explicit_model_keys:
-                model = model_specs_by_key[model_key]
-                if model.provider_id != suite.model_selector.provider_id:
-                    raise ValueError(
-                        f"suite_id '{suite.suite_id}' の model_key "
-                        f"'{model_key}' は provider_id "
-                        f"'{suite.model_selector.provider_id}' と"
-                        "一致しません。"
+            for c in tp.cases:
+                if c.expected_output is None:
+                    issues.append(
+                        CheckIssue(
+                            code="CFG-00501",
+                            where=f"task_profile:{tp.name}/case:{c.name}",
+                            message=(
+                                f"scorer={tp.scorer.name} は expected_output"
+                                " を必須とする (FUN-00105)"
+                            ),
+                        )
                     )
 
-        resolved_models = model_registry.resolve_selector(suite.model_selector)
-        if not resolved_models:
-            raise ValueError(
-                f"suite_id '{suite.suite_id}' からモデルを解決できませんでした。"
+    # CFG-00505: store_root が書込可能か
+    if store_root is not None:
+        ok, detail = _check_writable(store_root)
+        if not ok:
+            issues.append(
+                CheckIssue(
+                    code="CFG-00505",
+                    where=f"store_root:{store_root}",
+                    message=f"Result Store が書込不可: {detail}",
+                )
             )
 
-        resolved_prompts = prompt_repository.resolve_prompt_set_ids(
-            suite.prompt_set_ids
+    return issues
+
+
+def check_comparison(
+    cfg: "ComparisonConfig",
+    store_root: Path,
+) -> list[CheckIssue]:
+    """Comparison 設定検証 (CFG-00506).
+
+    Run 識別子の実在性と TaskProfile セット一致を確認する。Run Comparator
+    と同等の判定だが、`check` 用にエラーを集約する。
+    """
+    from ..storage import ResultStore  # 循環回避のため遅延 import
+
+    issues: list[CheckIssue] = []
+    store = ResultStore(store_root)
+
+    profiles_per_run: dict[str, tuple[str, ...] | None] = {}
+    for run_id in cfg.run_ids:
+        try:
+            meta = store.load_meta(run_id)
+        except FileNotFoundError:
+            issues.append(
+                CheckIssue(
+                    code="CFG-00506",
+                    where=f"run_id:{run_id}",
+                    message="Result Store に該当 Run が存在しない",
+                )
+            )
+            profiles_per_run[run_id] = None
+            continue
+        tps = meta.get("task_profiles") or []
+        profiles_per_run[run_id] = tuple(str(x) for x in tps)
+
+    # TaskProfile セット一致 (DAT-00109)
+    valid_sets = [v for v in profiles_per_run.values() if v is not None]
+    if len(valid_sets) >= 2 and len({frozenset(v) for v in valid_sets}) > 1:
+        issues.append(
+            CheckIssue(
+                code="CFG-00506",
+                where="comparison",
+                message=(
+                    "比較対象 Run の TaskProfile セットが一致しない (DAT-00109)"
+                    f" sets={profiles_per_run}"
+                ),
+            )
         )
-        seen_prompt_ids = {prompt.prompt_id for prompt in resolved_prompts}
-        for prompt_id in suite.prompt_ids:
-            if prompt_id in seen_prompt_ids:
-                continue
-            resolved_prompts.append(prompt_repository.get(prompt_id))
-            seen_prompt_ids.add(prompt_id)
-        if not resolved_prompts:
-            raise ValueError(
-                f"suite_id '{suite.suite_id}' からプロンプトを解決できませんでした。"
-            )
+    return issues
 
 
-def _iter_toml_files(directory: Path) -> list[Path]:
-    return sorted(path for path in directory.glob("*.toml") if path.is_file())
-
-
-def _read_toml_file(file_path: Path) -> dict[str, Any]:
-    with file_path.open("rb") as stream:
-        raw = tomllib.load(stream)
-    if not isinstance(raw, dict):
-        raise ValueError(f"{file_path} の TOML ルートは table である必要があります。")
-    return raw
-
-
-def _parse_prompt_variable(
-    raw: dict[str, Any],
-    file_path: Path,
-) -> PromptVariable:
-    return PromptVariable(
-        name=_require_str(raw, "name", file_path),
-        type=_require_str(raw, "type", file_path),
-        required=_optional_bool(raw.get("required"), default=True),
-        description=_optional_str(raw.get("description")) or "",
-        default=raw.get("default"),
-        example=raw.get("example"),
-        validation=_optional_mapping(raw.get("validation")),
-    )
-
-
-def _parse_evaluation_metadata(
-    raw: dict[str, Any],
-    file_path: Path,
-) -> EvaluationMetadata:
-    if not raw:
-        return EvaluationMetadata(primary_metric="exact_match")
-    return EvaluationMetadata(
-        primary_metric=_require_str(raw, "primary_metric", file_path),
-        secondary_metrics=_as_string_tuple(
-            raw.get("secondary_metrics", []),
-            file_path,
-            "evaluation_metadata.secondary_metrics",
-        ),
-        reference_type=_optional_str(raw.get("reference_type")) or "text",
-        scorer=_optional_str(raw.get("scorer")) or "exact_match",
-        difficulty=_optional_str(raw.get("difficulty")) or "starter",
-        language=_optional_str(raw.get("language")) or "ja",
-        expected_output_format=(
-            _optional_str(raw.get("expected_output_format")) or "text"
-        ),
-    )
-
-
-def _parse_generation_settings(
-    raw: dict[str, Any],
-    file_path: Path,
-) -> GenerationSettings:
-    max_output_tokens = raw.get("max_output_tokens", raw.get("max_tokens"))
-    return GenerationSettings(
-        temperature=_optional_float(raw.get("temperature"), file_path),
-        top_p=_optional_float(raw.get("top_p"), file_path),
-        max_tokens=_optional_int(max_output_tokens, file_path),
-        seed=_optional_int(raw.get("seed"), file_path),
-        stop=_as_string_tuple(raw.get("stop", []), file_path, "stop"),
-    )
-
-
-def _register_unique(
-    registry: dict[str, Path],
-    key: str,
-    file_path: Path,
-    label: str,
-) -> None:
-    if key in registry:
-        previous_path = registry[key]
-        raise ValueError(
-            f"{label} '{key}' が重複しています: {previous_path} / {file_path}"
-        )
-    registry[key] = file_path
-
-
-def _require_str(raw: Mapping[str, Any], key: str, file_path: Path) -> str:
-    value = raw.get(key)
-    if not isinstance(value, str) or not value:
-        raise ValueError(f"{file_path} の '{key}' は空でない文字列である必要があります。")
-    return value
-
-
-def _require_text(raw: Mapping[str, Any], key: str, file_path: Path) -> str:
-    value = raw.get(key)
-    if not isinstance(value, str):
-        raise ValueError(f"{file_path} の '{key}' は文字列である必要があります。")
-    return value
-
-
-def _optional_str(value: object) -> str | None:
-    return value if isinstance(value, str) else None
-
-
-def _optional_mapping(value: object) -> dict[str, Any]:
-    if value is None:
-        return {}
-    if not isinstance(value, dict):
-        raise ValueError("table である必要がある値が見つかりました。")
-    return dict(value)
-
-
-def _optional_bool(value: object, *, default: bool) -> bool:
-    if value is None:
-        return default
-    if not isinstance(value, bool):
-        raise ValueError("bool である必要がある値が見つかりました。")
-    return value
-
-
-def _optional_float(value: object, file_path: Path) -> float | None:
-    if value is None:
-        return None
-    if isinstance(value, (int, float)) and not isinstance(value, bool):
-        return float(value)
-    raise ValueError(f"{file_path} の数値項目は float 互換である必要があります。")
-
-
-def _optional_int(value: object, file_path: Path) -> int | None:
-    if value is None:
-        return None
-    if isinstance(value, int) and not isinstance(value, bool):
-        return value
-    raise ValueError(f"{file_path} の整数項目は int である必要があります。")
-
-
-def _as_string_tuple(
-    value: object,
-    file_path: Path,
-    field_name: str,
-) -> tuple[str, ...]:
-    if value is None:
-        return ()
-    if not isinstance(value, list):
-        raise ValueError(f"{file_path} の '{field_name}' は配列である必要があります。")
-    items: list[str] = []
-    for item in value:
-        if not isinstance(item, str) or not item:
-            raise ValueError(
-                f"{file_path} の '{field_name}' は空でない文字列配列である必要があります。"
-            )
-        items.append(item)
-    return tuple(items)
-
-
-def _default_run_id(suite_id: str) -> str:
-    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    normalized_suite_id = "-".join(part for part in suite_id.split() if part)
-    return f"{normalized_suite_id}-{timestamp}"
+def _check_writable(path: Path) -> tuple[bool, str]:
+    """ディレクトリ (または親) が書込可能かを副作用なしで確認する."""
+    try:
+        path.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        return False, str(exc)
+    if not os.access(path, os.W_OK):
+        return False, "書込権限なし"
+    return True, "ok"

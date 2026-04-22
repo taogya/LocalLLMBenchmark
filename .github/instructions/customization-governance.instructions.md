@@ -1,20 +1,15 @@
 ---
-description: ".github 配下の copilot-instructions、instructions、agents、prompts を作成または更新するときに使う。公式の責務境界と粒度を守るためのルール。"
+description: ".github 配下の copilot-instructions、instructions、agents を作成・更新するときに使う。責務境界の重複を避けるためのルール。"
 name: "カスタム定義ガバナンス"
-applyTo: ".github/copilot-instructions.md, .github/instructions/**/*.md, .github/agents/**/*.md, .github/prompts/**/*.md"
+applyTo: ".github/copilot-instructions.md, .github/instructions/**/*.md, .github/agents/**/*.md"
 ---
 
 # カスタム定義ガバナンス
 
-- .github/copilot-instructions.md は、常時適用される安定した全体方針だけを書く。
-- .github/copilot-instructions.md に、タスク固有の手順、特定ベンダー前提、個別ワークフローの詳細を書きすぎない。
-- .instructions.md は、対象ファイルや特定トピックにだけ適用したいルールを書く。
-- .instructions.md に、エージェントの人格や長い運用手順を書かない。
-- .agent.md は、役割、担当範囲、使えるツール、進め方、出力形式を書く。
-- .agent.md に、プロジェクト全体へ常時適用されるルールを重複して書きすぎない。
-- .prompt.md は任意であり、slash command の入口に明確な価値があるときだけ作る。
-- agent を直接選べば十分な運用なら、.prompt.md を置かなくてよい。
-- .prompt.md は、実行入口になる短い再利用ワークフローとして書く。
-- .prompt.md に、常時適用ルールや agent 本体の説明を重複させすぎない。
-- description は、いつ使うかが分かる具体的な日本語にする。
-- 役割やルールが複数ファイルにまたがるときは、最も責務に近いファイルへ寄せ、重複は減らす。
+- `copilot-instructions.md` には常時適用される最小方針のみを置く。タスク固有の手順・特定 provider 前提・個別ワークフロー詳細は書かない。
+- `instructions/*.instructions.md` は対象ファイルや特定トピック専用のルールに限定する。エージェントの人格や長い運用手順は書かない。
+- `agents/*.agent.md` は役割・担当範囲・使えるツール・進め方・出力形式を書く。プロジェクト全体に常時適用されるルールを重複させない。
+- 同じ内容を複数ファイルに書かない。最も責務に近いファイルへ寄せ、他は参照で済ませる。
+- `docs/` 配下に正本がある内容 (要件、設計、ロール定義、進行管理規約、ID 体系) は、`.github/` 側では参照に留める。
+- description は「いつ使うか」が分かる具体的な日本語にする。
+- 新しいエージェントやインストラクションを増やす前に、既存ファイルの拡張で済まないかを確認する。

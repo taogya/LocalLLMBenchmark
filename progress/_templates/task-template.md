@@ -1,29 +1,28 @@
----
-request_id: "00001"
-task_id: "00001-00"
-parent_task_id:
-owner: "project-master"
-title: "master-plan"
-status: "todo"
-depends_on: []
-child_task_ids: []
-created_at: "2026-04-17T00:00:00+09:00"
-updated_at: "2026-04-17T00:00:00+09:00"
-related_paths: []
----
+# TASK-NNNNN-SS <task title>
 
-# タスク記録テンプレート
+- Status: open | in-progress | review-pending | done | cancelled
+- Role: project-master | solution-architect | programmer | reviewer | docs-writer
+- Parent: TASK-NNNNN (子 task の場合のみ。親 task は省略)
+- Related IDs: REQ-, FUN-, NFR-, ARCH-, COMP-, DAT-, FLW-, OOS-, ROLE- など対象を列挙
 
-## 入力要件
+## 目的
 
-## 整理した要件
+何のための task か。1 段落で簡潔に。
 
-## 作業内容
+## 完了条件
 
-## 判断
+- 検収可能な条件を箇条書きで。
+- 「動く」だけでなく「何が確認できれば done か」を書く。
 
-## 成果
+## スコープ外
 
-## 次アクション
+この task で扱わないこと。別 task に分割した場合はその TASK- を併記。
 
-## 関連パス
+## 進捗ログ
+
+- YYYY-MM-DD HH:MM <Role>: <出来事>
+- 追記式。状態変更や差戻しもここに残す。
+
+## レビュー記録 (reviewer 用)
+
+- 子 reviewer task または親 task のレビュー結果を追記する欄。

@@ -1,7 +1,0 @@
-prompt_set_id = "minimal-readiness-ja-v1"
-description = "task_id 00016-02: OpenAI-compatible readiness 用の最小 prompt set。"
-prompt_ids = [
-  "contact-routing-v1",
-  "invoice-fields-v1",
-  "support-hours-answer-v1",
-]

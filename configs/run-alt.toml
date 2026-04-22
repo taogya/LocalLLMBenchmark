@@ -1,0 +1,14 @@
+# Run 設定サンプル B (TASK-00007-04, CFG-00107)
+# 同モデル / 異なる生成条件 (temperature と seed を変える) で
+# compare の 2 つ目 Run を作るためのサンプル。
+
+[run]
+model_candidate = "qwen2.5-7b"
+task_profiles = ["qa-basic"]
+n_trials = 3
+store_root = "tmp/results"
+
+[run.generation]
+temperature = 0.7
+seed = 123
+max_tokens = 64

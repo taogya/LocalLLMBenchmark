@@ -1,0 +1,22 @@
+# TaskProfile サンプル: 短答 QA (TASK-00007-04)
+# CFG-00101: TaskProfile を 1 ファイル 1 概念で定義する。
+# scorer = normalized_match (SCR-00102): NFKC + casefold + 連続空白縮約で比較する。
+
+[task_profile]
+name = "qa-basic"
+purpose = "短答 QA"
+description = "1 行で答えられる短答問題。compare サンプル用の最小タスク。"
+
+[task_profile.scorer]
+name = "normalized_match"
+args = {}
+
+[[task_profile.cases]]
+name = "capital-of-japan"
+input = "日本の首都はどこですか。都市名のみを 1 単語で答えてください。"
+expected_output = "東京"
+
+[[task_profile.cases]]
+name = "two-plus-three"
+input = "2 + 3 はいくつですか。数字のみを 1 つ答えてください。"
+expected_output = "5"

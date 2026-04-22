@@ -1,25 +1,48 @@
 ---
-description: "progress/**/*.md にタスク記録を作成または更新するときに使う。進行管理ファイルの正本、粒度、更新ルールを定義する。"
+description: "progress/**/*.md にタスクを起票・更新するときに使う。task ID 形式と最小フォーマットを定義する。"
 name: "progress 運用ルール"
 applyTo: "progress/**/*.md"
 ---
 
 # progress 運用ルール
 
-- progress は静的なタスク一覧ではなく、進行状態と判断ログを残す場所として使う。
-- 1 つのユーザー要求に対して 1 つの request_id を発行する。request_id は 5 桁の 0 埋め数字とする。
-- task_id は request_id と 2 桁の連番を組み合わせた識別子とし、形式は 00001-00 のようにする。
-- 親記録は progress/project-master/00001-00-master-plan.md のように置く。
-- 子タスクは progress/<agent>/00001-01-<slug>.md のように置く。同じ agent に複数タスクがあってよい。
-- slug は小文字英数字とハイフンで表す。
-- すべての progress ファイルは YAML frontmatter を持ち、request_id、task_id、parent_task_id、owner、title、status、created_at、updated_at、related_paths を持つ。
-- 子タスクは parent_task_id で親記録を参照する。依存関係がある場合は depends_on に task_id 配列で書く。
-- 親記録は child_task_ids を持ち、子タスク一覧を追跡できるようにする。
-- プロジェクトマスターは、委譲前に必要な数だけ子タスクを作成または更新する。
-- 各 agent は、自分の担当 progress ファイルだけを更新し、他 agent の作業ログを書き換えない。
-- 1 ファイル 1 タスクを原則とし、別タスクの内容を混在させない。
-- status は todo、doing、blocked、done、cancelled のいずれかを使う。
-- frontmatter に加えて、要件整理、作業内容、判断、成果、次アクションの本文を残す。
-- 完了したら status を done にし、project-master 側へ結果を統合する。
-- 長い思考ログは残さず、次の担当者が判断できる要点だけを書く。
-- Python スクリプトなどで機械的に集計できるよう、frontmatter のキー名と形式は統一する。
+正本は [docs/development/progress.md](../../docs/development/progress.md) です。本書は task ファイルを書くときの実務ルールに絞ります。
+
+## task ID
+
+- 形式: `TASK-NNNNN-SS`
+  - `NNNNN`: 5 桁 0 埋めの親 task 連番
+  - `SS`: 2 桁 0 埋めの子 task 連番。子がない場合は省略
+- 親 task は `progress/project-master/` に配置する。子 task は対応するロールのディレクトリに配置する。
+- ファイル名: `TASK-NNNNN-SS-<short-slug>.md`。slug は小文字英数字とハイフンのみ。
+
+## 最小フォーマット
+
+`progress/_templates/task-template.md` を雛形とする。task 本文は次の項目を必ず含める。
+
+- 状態 (`Status:` フィールド)
+- 担当ロール (`Role:`)
+- 親 task 参照 (子 task のみ `Parent:`)
+- 関連 ID (`Related IDs:` に REQ-, FUN-, NFR-, ARCH-, COMP-, DAT-, FLW-, OOS-, ROLE-, TRC- などを列挙)
+- 目的 / 完了条件 / スコープ外 / 進捗ログ
+
+## 状態遷移
+
+- `open` → `in-progress` → `review-pending` → `done`
+- 中止時は `cancelled`。理由を本文に残す
+- ファイル移動はしない。状態変更のみで管理する
+
+## 担当範囲
+
+- 各ロールは自分のディレクトリ配下の task のみ更新する。他ロールの task 本文を書き換えない。
+- 1 ファイル 1 task。複数の独立目的を 1 task に詰めない。
+
+## 連結
+
+- 子 task は本文先頭の `Parent:` で親 task を参照する。
+- 親 task は配下の子 task を進捗ログ等から辿れるようにする (リンク or task ID 列挙)。
+
+## 完了
+
+- 子 task: 担当ロールが完了条件を満たしたら `Status: review-pending` にする。
+- 親 task: 配下の子 task がすべて `done` または `cancelled` になった上で reviewer が `done` を付ける。
