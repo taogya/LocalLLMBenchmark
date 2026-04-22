@@ -3,6 +3,13 @@
 本ファイルの形式は [Keep a Changelog](https://keepachangelog.com/ja/1.1.0/) に準拠する。
 バージョニングは [Semantic Versioning](https://semver.org/lang/ja/) に準拠する。
 
+## [1.1.0] - 2026-04-22
+
+### Added
+
+- askQuestions ベースで TaskProfile / Provider / Run / Comparison の TOML を個別生成できる config-generator prompt を追加
+- provider / PC スペック / 用途を対話で聞き、候補モデルと選定理由を返す model-recommender prompt を追加
+
 ## [1.0.0] - 2026-04-20
 
 v1.0.0 ミニマル実装リリース。「あなたの PC・あなたの用途で最適なローカル LLM を選ぶ」(REQ-00001) ための最小垂直スライスを提供する。受入基準の正本は [docs/development/release-criteria.md](docs/development/release-criteria.md)。

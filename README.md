@@ -143,19 +143,24 @@ CLI 入出力の詳細は [docs/design/05-cli-surface.md](docs/design/05-cli-sur
 - セットアップから初回ベンチ完了までを **個人開発者 5 分以内**
 - 受入基準の正本は [docs/development/release-criteria.md](docs/development/release-criteria.md)
 
-### v1.1.0 以降 (検討候補)
+### v1.1.0 (コンフィグ生成プロンプト)
 
-- 過去 run 同士の比較・トレンド表示
-- BYO-dataset を支援するテンプレートと検証コマンド
-- LM Studio / OpenAI 互換 API への provider 拡張
-- 環境健全性確認コマンド (provider 疎通、モデル可用性)
+- `.github/prompts` に対話形式のコンフィグ生成プロンプトを追加 (task profile / provider / run / comparison の TOML をひな形から起こす支援)
+- PC スペックと用途を入力するとローカル実行に向く候補モデルの当たりを付けられる model-recommender プロンプトを追加
 
-### v2.0.0 以降 (将来)
+### v1.2.0 (環境確認とコンフィグ検証 CLI)
 
+- 実行環境の CPU / メモリ / GPU / OS を自動取得し、モデル選定の入力として利用できる system-probe サブコマンド (provider 疎通やモデル可用性の確認も兼ねる)
+- TaskProfile / Provider / Run / Comparison 設定の整合性を実行前に検証する config lint / dry-run サブコマンド
+
+### v2.0.0 (プロバイダ拡張と高次計測)
+
+- LM Studio / llama.cpp server など Ollama 以外のローカルプロバイダ対応 (Provider Adapter 抽象の再設計を伴う)
 - streaming 経由の TTFT / decode TPS 計測
 - RAM / GPU メモリの best-effort 計測
 - LLM-as-a-Judge を含む高次評価
 - チーム共有を前提とした結果ストア
+- 将来検討: 過去 run 同士の比較・トレンド表示、BYO-dataset を支援するテンプレートと検証コマンド
 
 ロードマップは要求の変化に応じて見直します。直近の確定スコープは本ファイルとリリースタグを正とします。
 
