@@ -55,7 +55,8 @@ flowchart TB
 ### COMP-00001 CLI Entry
 - ユーザーからの操作受付。サブコマンドの解析と各コンポーネントへの委譲。
 - 出力先 (標準出力 / ファイル) の制御。
-- 関連: FUN-00104, FUN-00207, FUN-00307, FUN-00308, FUN-00309, NFR-00002
+- `check` / `config lint` / `system-probe` / `config dry-run` に加え、`provider status` / `model pull` / `model warmup` を同一 CLI 上で提供する。read-only な観測面と explicit な provider preparation 面を分離し、責務を交差させない。
+- 関連: FUN-00104, FUN-00207, FUN-00307, FUN-00308, FUN-00309, FUN-00404, FUN-00405, FUN-00406, FUN-00407, FUN-00408, FUN-00409, FUN-00410, NFR-00002
 
 ### COMP-00002 (superseded by COMP-00012) Report Renderer
 - Run 表示にランキングを含めていた旧責務。Comparison との分離を反映させるため COMP-00012 で再定義した。
@@ -72,7 +73,8 @@ flowchart TB
 - 1 Trial 分の推論実行を担う。provider 種別ごとに 1 実装を持つ。
 - 入力: 標準化された推論リクエスト。出力: 標準化された推論レスポンス (応答テキスト + 性能 metric + 生応答)。
 - provider 固有の設定はこのコンポーネント内に閉じる。
-- 関連: FUN-00302, NFR-00201, NFR-00303, ARCH-00201
+- 推論に加え、read-only な status / probe と explicit な provider preparation operation (`model pull` / `model warmup`) を担う。`system-probe` / `config dry-run` / `provider status` は観測系契約を、`model pull` / `model warmup` は preparation 契約を再利用し、上位層は provider 固有 endpoint を直接扱わない。
+- 関連: FUN-00302, FUN-00404, FUN-00405, FUN-00407, FUN-00408, FUN-00409, FUN-00410, NFR-00201, NFR-00303, ARCH-00201
 
 ### COMP-00006 Quality Scorer
 - 推論レスポンスと期待出力から、決定的な品質スコアを算出する。
@@ -82,7 +84,8 @@ flowchart TB
 ### COMP-00007 Configuration Loader
 - 設定ファイル群を読み込み、整合性検証を行う。
 - 認証情報は環境変数経由でのみ取得し、設定ファイル中の平文を拒否する。
-- 関連: FUN-00105, FUN-00402, NFR-00401
+- `check`、`config lint`、Run 開始前検証、`config dry-run`、`system-probe`、`provider status`、`model pull`、`model warmup` が使う設定ソースを供給する。単一設定ファイルの検証では、必要最小限の補助設定ソース解決も担う。provider への動的通信自体は担わない。
+- 関連: FUN-00105, FUN-00402, FUN-00404, FUN-00405, FUN-00406, FUN-00407, FUN-00408, FUN-00409, FUN-00410, NFR-00401
 
 ### COMP-00008 Task Catalog
 - Task Profile と Case の集合を提供する。
@@ -119,6 +122,6 @@ flowchart TB
 
 次は本ツールが持たない責務です。利用者または provider 側に委ねます。
 
-- モデルの取得・常駐管理 (provider 責務)
+- モデルバイナリの保存と provider プロセスの常駐管理 (provider 責務)
 - 認証情報の発行・更新 (利用者責務)
 - ベンチマーク実行環境の用意 (利用者責務)

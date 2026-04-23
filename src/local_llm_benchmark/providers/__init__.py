@@ -1,4 +1,4 @@
-"""Provider Adapter 公開窓口 (TASK-00007-01)."""
+"""Provider Adapter 公開窓口 (TASK-00007-01, TASK-00014-02)."""
 
 from .base import (
     FAILURE_MALFORMED_RESPONSE,
@@ -7,8 +7,20 @@ from .base import (
     FAILURE_PROVIDER_UNREACHABLE,
     FAILURE_TIMEOUT,
     FAILURE_UNSUPPORTED_REQUEST,
+    MODEL_AVAILABLE,
+    MODEL_MISSING,
+    MODEL_UNKNOWN,
+    PullProgress,
+    PullResult,
+    PROBE_REACHABLE,
+    PROBE_UNREACHABLE,
+    PROBE_UNKNOWN,
+    ModelProbeResult,
+    ProviderStatusResult,
+    ProviderProbeResult,
     RUN_ABORT_FAILURE_KINDS,
     ProviderAdapter,
+    WarmupResult,
 )
 from .ollama import OllamaAdapter, build_adapter
 
@@ -19,8 +31,20 @@ __all__ = [
     "FAILURE_PROVIDER_UNREACHABLE",
     "FAILURE_TIMEOUT",
     "FAILURE_UNSUPPORTED_REQUEST",
+    "MODEL_AVAILABLE",
+    "MODEL_MISSING",
+    "MODEL_UNKNOWN",
+    "ModelProbeResult",
     "OllamaAdapter",
+    "PullProgress",
+    "PullResult",
+    "PROBE_REACHABLE",
+    "PROBE_UNREACHABLE",
+    "PROBE_UNKNOWN",
     "ProviderAdapter",
+    "ProviderStatusResult",
+    "ProviderProbeResult",
     "RUN_ABORT_FAILURE_KINDS",
+    "WarmupResult",
     "build_adapter",
 ]

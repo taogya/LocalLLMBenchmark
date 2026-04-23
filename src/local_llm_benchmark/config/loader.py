@@ -1,4 +1,4 @@
-"""Configuration & Task Catalog (TASK-00007-01).
+"""Configuration & Task Catalog (TASK-00007-01, TASK-00013-02).
 
 COMP-00007 (Configuration Loader) と COMP-00008 (Task Catalog) を提供する。
 v1 では TOML (`tomllib` 標準) でユーザー素材を読み込み、整合性検証
@@ -147,6 +147,11 @@ def load_task_catalog(task_profile_dir: Path) -> TaskCatalog:
     return TaskCatalog(profiles=profiles)
 
 
+def load_task_profile(path: Path) -> TaskProfile:
+    """単一の Task Profile 定義を読み込む (TASK-00013-02)."""
+    return _parse_task_profile(_load_toml(path), path)
+
+
 # ---- Model / Provider 定義 -------------------------------------------------
 
 
@@ -176,7 +181,10 @@ def _parse_model_candidates(
             provider_model_ref=str(
                 _require(entry, "provider_model_ref", str(src))
             ),
-            label=(None if entry.get("label") is None else str(entry["label"])),
+            label=(
+                None if entry.get("label") is None
+                else str(entry["label"])
+            ),
         )
         if mc.name in out:
             raise ConfigurationError(f"Model Candidate 名が重複: {mc.name}")
@@ -282,7 +290,10 @@ def _parse_run_config(data: Mapping[str, object], src: Path) -> RunConfig:
     tp_field = _require(rc, "task_profiles", str(src))
     if not isinstance(tp_field, list) or not tp_field:
         raise ConfigurationError(f"task_profiles は 1 件以上の配列: {src}")
-    n_trials = int(_require(rc, "n_trials", str(src)))
+    n_trials_value = _require(rc, "n_trials", str(src))
+    if not isinstance(n_trials_value, int):
+        raise ConfigurationError(f"n_trials は整数で指定する: {src}")
+    n_trials = int(n_trials_value)
     if n_trials < 1:
         raise ConfigurationError(f"n_trials は 1 以上: {src}")
     gen_d = rc.get("generation") or {}
@@ -459,6 +470,186 @@ def load_config_bundle(config_dir: Path) -> ConfigBundle:
         models=models,
         providers=providers,
     )
+
+
+def _classify_config_file(
+    data: Mapping[str, object],
+    src: Path,
+) -> str:
+    kinds: list[str] = []
+    if "task_profile" in data:
+        kinds.append("task_profile")
+    if "model_candidate" in data:
+        kinds.append("model_candidates")
+    if "provider" in data:
+        kinds.append("providers")
+    if "run" in data:
+        kinds.append("run")
+    if "comparison" in data:
+        kinds.append("comparison")
+    if len(kinds) != 1:
+        raise ConfigurationError(
+            "設定ファイル種別を一意に判定できない:"
+            f" {src} kinds={kinds or 'none'}"
+        )
+    return kinds[0]
+
+
+def _resolve_lint_support_path(
+    explicit: Path | None,
+    default: Path,
+    *,
+    label: str,
+) -> Path:
+    if explicit is not None:
+        return explicit
+    if default.exists():
+        return default
+    raise ConfigurationError(
+        f"{label} の補助設定ソースを解決できない: {default}"
+    )
+
+
+def _load_lint_bundle(
+    target: Path,
+    *,
+    config_dir: Path | None,
+    task_profile_dir: Path | None,
+    model_candidates_path: Path | None,
+    providers_path: Path | None,
+) -> ConfigBundle:
+    base_dir = config_dir or target.parent
+    resolved_task_profile_dir = _resolve_lint_support_path(
+        task_profile_dir,
+        base_dir / "task_profiles",
+        label="Task Profile",
+    )
+    resolved_model_candidates_path = _resolve_lint_support_path(
+        model_candidates_path,
+        base_dir / "model_candidates.toml",
+        label="Model Candidate",
+    )
+    resolved_providers_path = _resolve_lint_support_path(
+        providers_path,
+        base_dir / "providers.toml",
+        label="Provider",
+    )
+    return ConfigBundle(
+        source_root=base_dir.resolve(),
+        catalog=load_task_catalog(resolved_task_profile_dir),
+        models=load_model_candidates(resolved_model_candidates_path),
+        providers=load_provider_endpoints(resolved_providers_path),
+    )
+
+
+def load_support_bundle(
+    target: Path,
+    *,
+    config_dir: Path | None = None,
+    task_profile_dir: Path | None = None,
+    model_candidates_path: Path | None = None,
+    providers_path: Path | None = None,
+) -> ConfigBundle:
+    """単一ファイル検証や dry-run 用の補助設定ソースを解決する."""
+    return _load_lint_bundle(
+        target,
+        config_dir=config_dir,
+        task_profile_dir=task_profile_dir,
+        model_candidates_path=model_candidates_path,
+        providers_path=providers_path,
+    )
+
+
+def lint_config_target(
+    target: Path,
+    *,
+    config_dir: Path | None = None,
+    task_profile_dir: Path | None = None,
+    model_candidates_path: Path | None = None,
+    providers_path: Path | None = None,
+    store_root: Path | None = None,
+) -> list[CheckIssue]:
+    """`config lint` の主入力を静的検証する (TASK-00013-02)."""
+    if target.is_dir():
+        bundle = load_config_bundle(target)
+        return check_bundle(bundle, store_root=store_root)
+
+    data = _load_toml(target)
+    kind = _classify_config_file(data, target)
+
+    if kind == "task_profile":
+        profile = _parse_task_profile(data, target)
+        bundle = ConfigBundle(
+            source_root=target.parent.resolve(),
+            catalog=TaskCatalog({profile.name: profile}),
+            models={},
+            providers={},
+        )
+        return check_bundle(bundle)
+
+    if kind == "model_candidates":
+        models = _parse_model_candidates(data, target)
+        providers = load_provider_endpoints(
+            _resolve_lint_support_path(
+                providers_path,
+                (config_dir or target.parent) / "providers.toml",
+                label="Provider",
+            )
+        )
+        bundle = ConfigBundle(
+            source_root=(config_dir or target.parent).resolve(),
+            catalog=TaskCatalog({}),
+            models=models,
+            providers=providers,
+        )
+        return check_bundle(bundle)
+
+    if kind == "providers":
+        _parse_provider_endpoints(data, target)
+        return []
+
+    if kind == "run":
+        run_config = _parse_run_config(data, target)
+        bundle = load_support_bundle(
+            target,
+            config_dir=config_dir,
+            task_profile_dir=task_profile_dir,
+            model_candidates_path=model_candidates_path,
+            providers_path=providers_path,
+        )
+        issues = check_bundle(
+            bundle,
+            store_root=store_root or run_config.store_root,
+        )
+        try:
+            assemble_run_plan(
+                run_config=run_config,
+                catalog=bundle.catalog,
+                models=bundle.models,
+                providers=bundle.providers,
+            )
+        except ConfigurationError as exc:
+            message = str(exc)
+            if not any(it.message == message for it in issues):
+                issues.append(
+                    CheckIssue(
+                        code="CFG-00107",
+                        where=f"run:{target}",
+                        message=message,
+                    )
+                )
+        return issues
+
+    if kind == "comparison":
+        comparison = _parse_comparison_config(data, target)
+        resolved_store_root = store_root or comparison.store_root
+        if resolved_store_root is None:
+            raise ConfigurationError(
+                "Comparison 設定の検証には --store-root か comparison.store_root が必要"
+            )
+        return check_comparison(comparison, resolved_store_root)
+
+    raise ConfigurationError(f"未対応の設定種別: {kind}")
 
 
 # ---- 認証情報解決ルール (Phase 1 では未使用だが API を確保) ----------------

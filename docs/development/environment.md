@@ -2,7 +2,7 @@
 
 本書は v1 で実装着手するための環境前提と、外部依存導入の運用ルールを定めます。具体的なパッケージ一覧は網羅しません。導入是非は実装 task 単位で個別判断します。
 
-関連既存 ID: NFR-00301, NFR-00302, NFR-00402, ARCH-00006, OOS-00005, OOS-00006
+関連既存 ID: NFR-00301, NFR-00302, NFR-00402, ARCH-00006, OOS-00005, OOS-00006, OOS-00012
 
 ## 対応 OS
 
@@ -42,10 +42,11 @@
 | ID 参照 | 前提 |
 | --- | --- |
 | NFR-00402 | provider への通信は localhost を既定。外部送信は明示設定なしに行わない |
-| OOS-00005 | モデルの自動 download / pull は本ツールの責務外 |
+| OOS-00005 | (superseded by OOS-00012) モデルの自動 download / pull は本ツールの責務外 |
 | OOS-00006 | provider プロセスの起動・停止は本ツールの責務外 |
+| OOS-00012 | 暗黙 model pull は本ツールの責務外。取得は `model pull` の明示操作に限定する |
 
-v1 のサポート provider は Ollama のみ (PVD-00401)。Ollama が localhost で起動済みかつ対象モデルが pull 済みであることはユーザー責務とします。
+v1 のサポート provider は Ollama のみ (PVD-00401)。Ollama が localhost で起動済みであることは引き続きユーザー責務とし、対象モデルの取得と warmup は明示コマンド `model pull` / `model warmup` で実施できるものとします。
 
 ## 開発時に推奨される確認
 

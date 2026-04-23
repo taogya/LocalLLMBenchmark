@@ -1,4 +1,4 @@
-"""Run Coordinator (TASK-00007-01, COMP-00010).
+"""Run Coordinator (TASK-00007-01, TASK-00013-02, COMP-00010).
 
 1 Run = 1 Model のオーケストレーションを担う (FUN-00207, ARCH-00207).
 
@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Callable, Mapping, Sequence
+from typing import Any, Callable, Mapping
 
 from .. import SCHEMA_VERSION
 from ..models import (
@@ -34,6 +34,28 @@ from .aggregator import aggregate_case, aggregate_run
 
 ProgressEvent = Mapping[str, Any]
 ProgressCallback = Callable[[ProgressEvent], None]
+
+
+def build_inference_request(
+    plan: RunPlan,
+    *,
+    run_id: str,
+    task_profile_name: str,
+    case_name: str,
+    case_input: str,
+    sequence: int,
+) -> InferenceRequest:
+    """Run / dry-run で共通に使う推論要求を組み立てる (TASK-00013-02)."""
+    return InferenceRequest(
+        prompt=case_input,
+        generation=plan.conditions,
+        model_ref=plan.model_candidate.provider_model_ref,
+        timeout_seconds=plan.provider_endpoint.timeout_seconds,
+        run_id=run_id,
+        task_profile_name=task_profile_name,
+        case_name=case_name,
+        trial_index=sequence,
+    )
 
 
 @dataclass(frozen=True)
@@ -174,7 +196,13 @@ class RunCoordinator:
             aggregations=aggregations,
             run_summary=summary,
         )
-        emit({"type": "run_completed", "run_id": run_id, "run_dir": str(run_dir)})
+        emit(
+            {
+                "type": "run_completed",
+                "run_id": run_id,
+                "run_dir": str(run_dir),
+            }
+        )
         return RunResult(
             run_id=run_id,
             run_dir=str(run_dir),
@@ -198,15 +226,13 @@ class RunCoordinator:
         scorer,
         scorer_args: Mapping[str, Any],
     ) -> Trial:
-        request = InferenceRequest(
-            prompt=case_input,
-            generation=plan.conditions,
-            model_ref=plan.model_candidate.provider_model_ref,
-            timeout_seconds=plan.provider_endpoint.timeout_seconds,
+        request = build_inference_request(
+            plan,
             run_id=run_id,
             task_profile_name=task_profile_name,
             case_name=case_name,
-            trial_index=sequence,
+            case_input=case_input,
+            sequence=sequence,
         )
         response = adapter.infer(request)
         if response.failure_kind is not None:

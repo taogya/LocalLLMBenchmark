@@ -10,13 +10,14 @@
 | OOS-00002 | streaming 経由の TTFT / decode TPS 計測 | provider 側の streaming 対応に依存。v2 以降 |
 | OOS-00003 | RAM / GPU メモリ計測 | OS 依存が強く、v1 のミニマル原則に反する。v2 以降 |
 | OOS-00004 | LLM-as-a-Judge による自動採点 | 評価系の複雑度が一段上がるため別フェーズで設計。Copilot CLI (raptor mini 等) を judge として用いる検討は OOS-00011 を参照 |
-| OOS-00005 | モデルの自動 download / pull | provider の責務とする |
+| OOS-00005 | (superseded by OOS-00012) モデルの自動 download / pull | 旧方針。v1.2.0 から明示コマンド `model pull` は対象化する |
 | OOS-00006 | provider プロセスの起動・停止管理 | provider の責務とする |
 | OOS-00007 | チーム共有を前提とした結果ストア | 個人利用に集中する |
 | OOS-00008 | CI 組み込み用の閾値 gate | v1.1 以降の検討対象 |
 | OOS-00009 | Run の途中再開 / 失敗 Case のみ再実行 | v1.1 以降の検討対象 |
 | OOS-00010 | クラウド有料モデル評価・課金推定 | 本ツールの目的から外れる |
 | OOS-00011 | Copilot CLI (`gh copilot` / raptor mini 等) を LLM-as-a-Judge として活用すること | OOS-00004 とは別軸で検討する。前提コスト (プレミアムリクエスト x0 等) は本ツールの判定軸でなく、決定的 scorer (SCR-00101 系列) との併用を必須とする方針。v1.x 以降の検討候補。昇格条件: (a) `gh copilot` の認証と CLI 入出力安定性が確認できること、(b) 出力の決定性または分散の評価ができること、(c) 決定的 scorer の判定と分離して記録できること |
+| OOS-00012 | `run` / `system-probe` / `config dry-run` / `model warmup` からの暗黙 model pull | model 取得は `model pull` の明示操作に限定する |
 
 ## 永続的な対象外
 

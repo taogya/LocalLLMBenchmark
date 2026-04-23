@@ -1,6 +1,6 @@
-"""local_llm_benchmark パッケージ (TASK-00007-01).
+"""local_llm_benchmark パッケージ (TASK-00007-01, TASK-00019-03).
 
-v1.0.0 最小垂直スライス。詳細は各サブモジュールの docstring 参照。
+v1.2.0 最小垂直スライス。詳細は各サブモジュールの docstring 参照。
 """
 
 # 結果スキーマの版識別子 (DAT-00201, NFR-00204)

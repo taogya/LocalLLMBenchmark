@@ -55,6 +55,13 @@
 | FUN-00401 | ユーザーは過去 Run の一覧を確認できる |
 | FUN-00402 | ユーザーは設定および登録内容の整合性を、Run 実行前に確認できる |
 | FUN-00403 | ユーザーは過去 Comparison の一覧を確認できる |
+| FUN-00404 | ユーザーは実行環境の CPU / メモリ / GPU / OS と、設定済み provider の疎通状態を、機械可読 / 人間可読の両方で確認できる |
+| FUN-00405 | ユーザーは `model_candidates.toml` に登録した各 Model Candidate について、provider 上の可用性を実行前に確認できる |
+| FUN-00406 | ユーザーは単一の設定ファイルまたは設定ディレクトリを指定して、静的整合性を実行前に確認できる |
+| FUN-00407 | ユーザーは Run 設定を起点に、provider 疎通、指定 model の解決可否、代表 1 Case の prompt 組立可否を実行前に確認できる |
+| FUN-00408 | ユーザーは設定済み provider について、起動状態、版情報、利用可能モデル一覧を実行前に確認できる |
+| FUN-00409 | ユーザーは 1 件の provider 上の model ref を、明示コマンドで取得できる。`run` / `system-probe` / `config dry-run` / `model warmup` は暗黙に pull しない |
+| FUN-00410 | ユーザーは 1 件の provider 上の model ref に対して、最小の provider 実行を 1 回行い、Run 前にロード状態へ寄せられる。TaskProfile / Run 設定への依存は持ち込まない |
 
 ## 関連の非機能要件
 
